@@ -33,3 +33,5 @@ The signal functions are as follows:
 - Wait
 - Fire
 - Destroy
+
+*Note that all functions use `.` syntax, not `:` syntax.*

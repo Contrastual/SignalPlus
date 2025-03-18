@@ -21,15 +21,15 @@
  +++++++++++++++++++++++++                                                                          
       *++++                                                                                         
 
-An incredibly simple, open-source script signal module for Roblox,
-with 3x the speed of RBXScriptSignals, while still error-prone.
+A super fast, memory efficient, open-source script signal module
+for Roblox, with all features of RBXScriptSignals and even more.
 
 
 GitHub:
 https://github.com/AlexanderLindholt/SignalPlus
 
 Devforum:
-https://devforum.roblox.com/t/
+https://devforum.roblox.com/t/signal%EF%BD%9Cinsanely-fast-simple-script-signal/3552231
 
 
 --------------------------------------------------------------------------------
@@ -59,63 +59,186 @@ SOFTWARE.
 ]]--
 
 -- Types.
+type CreateSignal = () -> ()
+
+export type Connection = {
+	Disconnect: (connection: Connection) -> (),
+	Connected: boolean
+}
 export type Signal = {
-	Connect: (callback: () -> ()) -> (),
-	Wait: () -> (),
-	Fire: (...any) -> (),
-	Destroy: () -> ()
+	Connect: (signal: Signal, callback: () -> ()) -> Connection,
+	Once: (signal: Signal, callback: () -> ()) -> Connection,
+	Wait: (signal: Signal) -> (),
+	
+	Fire: (signal: Signal, ...any) -> (),
+	
+	DisconnectAll: (signal: Signal) -> (),
+	Destroy: (signal: Signal) -> ()
 }
 
--- Create function.
-return function()
-	local connections = {}
-	local waiting = {}
-	
-	local signal = {}
-	
-	signal.Connect = function(callback)
-		-- Argument errors.
-		if type(callback) ~= "function" then error("No callback provided.") end
+-- Thread recycling.
+local freeThread = nil
+local function runCallbackInFreeThread(callback, ...)
+	local thread = freeThread
+	freeThread = nil
+	callback(...)
+	freeThread = thread
+end
+local function createFreeThread()
+	while true do
+		runCallbackInFreeThread(coroutine.yield())
+	end
+end
+
+-- Connection class.
+local connectionClass = {__index = {
+	Disconnect = function(connection)
+		if connection[2] then
+			connection[2][3] = connection[3]
+		else
+			connection[1][2] = connection[3]
+		end
+		if connection[3] then
+			connection[3][2] = connection[2]
+		else
+			connection[1][1] = connection[2]
+		end
+		
+		table.clear(connection)
+		setmetatable(connection, nil)
+	end
+}}
+
+-- Signal class.
+local signalClass = {__index = {
+	Connect = function(signal, callback)
+		-- Connect callback.
+		local connection = nil
+		connection = setmetatable({
+			[1] = signal,
+			[2] = signal[1], -- Previous.
+			[3] = nil, -- Next.
+			
+			Connected = false,
+			[5] = callback
+		}, connectionClass)
+		if signal[1] then
+			signal[1][3] = connection
+		else
+			signal[2] = connection
+		end
+		signal[1] = connection
+		
+		-- Create and return connection.
+		return connection
+	end,
+	Once = function(signal, callback)
+		-- Connect callback.
+		local connection = nil
+		connection = setmetatable({
+			[1] = signal,
+			[2] = signal[1], -- Previous.
+			[3] = nil, -- Next.
+			
+			Connected = false,
+			[5] = function() -- Callback.
+				-- Disconnect.
+				if connection[2] then
+					connection[2][3] = connection[3]
+				else
+					signal[2] = connection[3]
+				end
+				if connection[3] then
+					connection[3][2] = connection[2]
+				else
+					signal[1] = connection[2]
+				end
+				connection.Connected = false
+				
+				-- Fire callback.
+				callback()
+			end
+		}, connectionClass)
+		if signal[1] then
+			signal[1][3] = connection
+		else
+			signal[2] = connection
+		end
+		signal[1] = connection
+		
+		-- Create and return connection.
+		return connection
+	end,
+	Wait = function(signal)
+		-- Connect callback.
+		local thread = coroutine.running()
 		
 		-- Connect callback.
-		table.insert(connections, callback)
-		-- Return disconnect function.
-		return table.freeze({
-			Disconnect = function()
-				table.remove(connections, table.find(connections, callback))
-			end
-		})
-	end
-	
-	signal.Wait = function()
-		-- Insert the current thread to waiting, so that it can be resumed on fire.
-		table.insert(waiting, coroutine.running())
-		-- Yield (pause) the current thread.
-		coroutine.yield()
-	end
-	
-	signal.Fire = function(...)
-		-- Fire to listeners.
-		for _, callback in ipairs(connections) do
-			coroutine.resume(coroutine.create(callback), ...) -- Run in seperate thread to avoid yield in this thread.
-		end
-		
-		-- Resume waiting threads.
-		if waiting then
-			for _, thread in ipairs(waiting) do
+		local connection = nil
+		connection = setmetatable({
+			[1] = signal,
+			[2] = signal[1], -- Previous.
+			[3] = nil, -- Next.
+			
+			Connected = false,
+			[5] = function() -- Callback.
+				-- Disconnect.
+				if connection[2] then
+					connection[2][3] = connection[3]
+				else
+					signal[2] = connection[3]
+				end
+				if connection[3] then
+					connection[3][2] = connection[2]
+				else
+					signal[1] = connection[2]
+				end
+				connection.Connected = false
+				
+				-- Resume the thread.
 				coroutine.resume(thread)
 			end
-			waiting = {}
+		}, connectionClass)
+		if signal[1] then
+			signal[1][3] = connection
+		else
+			signal[2] = connection
 		end
-	end
+		signal[1] = connection
+		
+		-- Yield (pause) the current thread.
+		coroutine.yield()
+	end,
 	
-	signal.Destroy = function()
-		-- Clear up stuff to save on memory.
-		connections = nil
-		waiting = nil
-		-- Get rid of the functions, so you can't use it anymore.
-		table.clear(signal)
-	end
+	Fire = function(signal, ...)
+		-- Fire to listeners.
+		local node = signal[2]
+		while node do
+			if not freeThread then
+				freeThread = coroutine.create(createFreeThread)
+				coroutine.resume(freeThread)
+			end
+			task.spawn(freeThread, node[5], ...)
+			
+			node = node[3]
+		end
+	end,
 	
-	return signal :: Signal
-end
+	DisconnectAll = function(signal)
+		-- Clear linked list.
+		signal[1] = nil
+		signal[2] = nil
+	end,
+	Destroy = function(signal)
+		-- Clear linked list.
+		signal[1] = nil
+		signal[2] = nil
+		-- Unlink class methods.
+		setmetatable(signal, nil)
+	end
+}}
+
+-- Return signal create function.
+return function()
+	return setmetatable({}, signalClass)
+end :: CreateSignal

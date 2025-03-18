@@ -29,7 +29,7 @@ GitHub:
 https://github.com/AlexanderLindholt/SignalPlus
 
 Devforum:
-https://devforum.roblox.com/t/signal%EF%BD%9Cinsanely-fast-simple-script-signal/3552231
+https://devforum.roblox.com/t/signal%EF%BD%9Csuper-fast-featureful-script-signal/3552231
 
 
 --------------------------------------------------------------------------------

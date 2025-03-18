@@ -21,6 +21,22 @@ It's simply better.
 <br>
 
 # 🚀 Get started!
+## Quick setup
+Let's first get the module. There are two ways:
+- **Get it from the creator store:**
+  - Click `Get` at the top of this post.
+  - Click `Get Model` on the store.
+  - Open the ToolBox in Roblox Studio.
+  - Go to the `Inventory` tab.
+  - Click on `GameLoader`.
+- **Get it from GitHub:**
+  - Click `Git` at the top of this post.
+  - Go to `Releases`.
+  - Download the latest `.rbxm` file.
+  - Find the file in your file explorer.
+  - Drag the file into Roblox Studio.
+
+## How to use it
 In any script, simply require the module. It will return a signal creation function. Example:
 ```luau
 local signalPlus = require(script.SignalPlus)
@@ -28,10 +44,20 @@ local signalPlus = require(script.SignalPlus)
 local mySignal = signalPlus() -- Will create a new signal.
 ```
 
-The signal functions are as follows:
-- Connect -> {Disconnect: function}
-- Wait
-- Fire
-- Destroy
+## Documentation
+`signalPlus()` -> Signal
 
-*Note that all functions use `.` syntax, not `:` syntax.*
+### Signal:
+- `:Connect(function)` -> Connection
+- `:Once(function)` -> Connection
+  - Connects a function, but disconnects it after first fire.
+- `:Wait()`
+  - Yields the current thread until the next fire.
+- `:Fire()`
+- `:DisconnectAll()`
+- `:Destroy()`
+  - Makes the signal unusable.
+
+### Connection:
+- `:Disconnect()`
+- `.Connected` -> boolean

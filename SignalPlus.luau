@@ -75,6 +75,11 @@ export type Signal = {
 }
 type CreateSignal = () -> Signal
 
+-- Cache frequently used functions.
+local running = coroutine.running
+local resume = coroutine.resume
+local yield = coroutine.yield
+
 -- Thread recycling.
 local freeThread = nil
 local function runCallbackInFreeThread(callback, ...)
@@ -85,11 +90,11 @@ local function runCallbackInFreeThread(callback, ...)
 end
 local function createFreeThread()
 	while true do
-		runCallbackInFreeThread(coroutine.yield())
+		runCallbackInFreeThread(yield())
 	end
 end
 freeThread = coroutine.create(createFreeThread)
-coroutine.resume(freeThread)
+resume(freeThread)
 
 -- Connection class.
 local connectionClass = table.freeze({__index = table.freeze({
@@ -100,14 +105,11 @@ local connectionClass = table.freeze({__index = table.freeze({
 		if previous then
 			previous[3] = next
 		else
-			connection[1][2] = next
+			connection[1][1] = next
 		end
 		if next then
 			next[2] = previous
-		else
-			connection[1][1] = previous
 		end
-		
 		-- Set connected boolean.
 		connection.Connected = false
 		-- Clear values.
@@ -123,49 +125,41 @@ local connectionClass = table.freeze({__index = table.freeze({
 -- Signal class.
 local signalClass = table.freeze({__index = table.freeze({
 	Connect = function(signal, callback)
-		-- Connect callback.
+		-- Setup connection.
 		local connection = nil
 		connection = setmetatable({
 			[1] = signal,
-			[2] = signal[1], -- Previous.
-			[3] = nil, -- Next.
+			[2] = nil, -- Previous.
+			[3] = signal[1], -- Next.
 			
 			Connected = true,
 			[4] = callback
 		}, connectionClass)
-		if signal[1] then
-			signal[1][3] = connection
-		else
-			signal[2] = connection
-		end
 		signal[1] = connection
 		
-		-- Create and return connection.
+		-- Return connection.
 		return connection
 	end,
 	Once = function(signal, callback)
-		-- Connect callback.
+		-- Setup connection.
 		local connection = nil
 		connection = setmetatable({
 			[1] = signal,
-			[2] = signal[1], -- Previous.
-			[3] = nil, -- Next.
+			[2] = nil, -- Previous.
+			[3] = signal[1], -- Next.
 			
 			Connected = true,
 			[4] = function() -- Callback.
 				-- Disconnect.
 				local previous = connection[2]
 				local next = connection[3]
-				
 				if previous then
 					previous[3] = next
 				else
-					signal[2] = next
+					signal[1] = next
 				end
 				if next then
 					next[2] = previous
-				else
-					signal[1] = previous
 				end
 				connection.Connected = false
 				
@@ -173,67 +167,53 @@ local signalClass = table.freeze({__index = table.freeze({
 				callback()
 			end
 		}, connectionClass)
-		if signal[1] then
-			signal[1][3] = connection
-		else
-			signal[2] = connection
-		end
 		signal[1] = connection
 		
-		-- Create and return connection.
+		-- Return connection.
 		return connection
 	end,
 	Wait = function(signal)
-		-- Connect callback.
-		local thread = coroutine.running()
+		-- Setup connection.
+		local thread = running()
 		
-		-- Connect callback.
 		local connection = nil
 		connection = setmetatable({
 			[1] = signal,
-			[2] = signal[1], -- Previous.
-			[3] = nil, -- Next.
+			[2] = nil, -- Previous.
+			[3] = signal[1], -- Next.
 			
 			Connected = false,
 			[4] = function() -- Callback.
 				-- Disconnect.
 				local previous = connection[2]
 				local next = connection[3]
-				
 				if previous then
 					previous[3] = next
 				else
-					signal[2] = next
+					signal[1] = next
 				end
 				if next then
 					next[2] = previous
-				else
-					signal[1] = previous
 				end
 				connection.Connected = false
 				
 				-- Resume the thread.
-				coroutine.resume(thread)
+				resume(thread)
 			end
 		}, connectionClass)
-		if signal[1] then
-			signal[1][3] = connection
-		else
-			signal[2] = connection
-		end
 		signal[1] = connection
 		
 		-- Yield (pause) the current thread.
-		coroutine.yield()
+		yield()
 	end,
 	
 	Fire = function(signal, ...)
 		-- Fire to listeners.
-		local node = signal[2]
+		local node = signal[1]
 		while node do
 			if not freeThread then
 				freeThread = coroutine.create(createFreeThread)
-				coroutine.resume(freeThread)
+				resume(freeThread)
 			end
 			task.spawn(freeThread, node[4], ...)
 			
@@ -242,14 +222,27 @@ local signalClass = table.freeze({__index = table.freeze({
 	end,
 	
 	DisconnectAll = function(signal)
-		-- Clear linked list.
+		local node = signal[1]
+		while node do
+			local next = node[3]
+			node[1] = nil
+			node[3] = nil
+			node.Connected = false
+			node = next
+		end
 		signal[1] = nil
-		signal[2] = nil
 	end,
 	Destroy = function(signal)
-		-- Clear linked list.
+		-- Disconnect all.
+		local node = signal[1]
+		while node do
+			local next = node[3]
+			node[1] = nil
+			node[3] = nil
+			node.Connected = false
+			node = next
+		end
 		signal[1] = nil
-		signal[2] = nil
 		-- Unlink class methods.
 		setmetatable(signal, nil)
 	end

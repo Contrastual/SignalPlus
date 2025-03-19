@@ -88,22 +88,34 @@ local function createFreeThread()
 		runCallbackInFreeThread(coroutine.yield())
 	end
 end
+freeThread = coroutine.create(createFreeThread)
+coroutine.resume(freeThread)
 
 -- Connection class.
 local connectionClass = table.freeze({__index = table.freeze({
 	Disconnect = function(connection)
-		if connection[2] then
-			connection[2][3] = connection[3]
+		-- Remove from linked list.
+		local previous = connection[2]
+		local next = connection[3]
+		if previous then
+			previous[3] = next
 		else
-			connection[1][2] = connection[3]
+			connection[1][2] = next
 		end
-		if connection[3] then
-			connection[3][2] = connection[2]
+		if next then
+			next[2] = previous
 		else
-			connection[1][1] = connection[2]
+			connection[1][1] = previous
 		end
 		
-		table.clear(connection)
+		-- Set connected boolean.
+		connection.Connected = false
+		-- Clear values.
+		connection[1] = nil
+		connection[2] = nil
+		connection[3] = nil
+		connection[4] = nil
+		-- Unlink class methods.
 		setmetatable(connection, nil)
 	end
 })})
@@ -118,8 +130,8 @@ local signalClass = table.freeze({__index = table.freeze({
 			[2] = signal[1], -- Previous.
 			[3] = nil, -- Next.
 			
-			Connected = false,
-			[5] = callback
+			Connected = true,
+			[4] = callback
 		}, connectionClass)
 		if signal[1] then
 			signal[1][3] = connection
@@ -139,18 +151,21 @@ local signalClass = table.freeze({__index = table.freeze({
 			[2] = signal[1], -- Previous.
 			[3] = nil, -- Next.
 			
-			Connected = false,
-			[5] = function() -- Callback.
+			Connected = true,
+			[4] = function() -- Callback.
 				-- Disconnect.
-				if connection[2] then
-					connection[2][3] = connection[3]
+				local previous = connection[2]
+				local next = connection[3]
+				
+				if previous then
+					previous[3] = next
 				else
-					signal[2] = connection[3]
+					signal[2] = next
 				end
-				if connection[3] then
-					connection[3][2] = connection[2]
+				if next then
+					next[2] = previous
 				else
-					signal[1] = connection[2]
+					signal[1] = previous
 				end
 				connection.Connected = false
 				
@@ -180,17 +195,20 @@ local signalClass = table.freeze({__index = table.freeze({
 			[3] = nil, -- Next.
 			
 			Connected = false,
-			[5] = function() -- Callback.
+			[4] = function() -- Callback.
 				-- Disconnect.
-				if connection[2] then
-					connection[2][3] = connection[3]
+				local previous = connection[2]
+				local next = connection[3]
+				
+				if previous then
+					previous[3] = next
 				else
-					signal[2] = connection[3]
+					signal[2] = next
 				end
-				if connection[3] then
-					connection[3][2] = connection[2]
+				if next then
+					next[2] = previous
 				else
-					signal[1] = connection[2]
+					signal[1] = previous
 				end
 				connection.Connected = false
 				
@@ -217,7 +235,7 @@ local signalClass = table.freeze({__index = table.freeze({
 				freeThread = coroutine.create(createFreeThread)
 				coroutine.resume(freeThread)
 			end
-			task.spawn(freeThread, node[5], ...)
+			task.spawn(freeThread, node[4], ...)
 			
 			node = node[3]
 		end

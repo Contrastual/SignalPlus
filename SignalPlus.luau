@@ -90,7 +90,7 @@ local function createFreeThread()
 end
 
 -- Connection class.
-local connectionClass = {__index = {
+local connectionClass = table.freeze({__index = table.freeze({
 	Disconnect = function(connection)
 		if connection[2] then
 			connection[2][3] = connection[3]
@@ -106,10 +106,10 @@ local connectionClass = {__index = {
 		table.clear(connection)
 		setmetatable(connection, nil)
 	end
-}}
+})})
 
 -- Signal class.
-local signalClass = {__index = {
+local signalClass = table.freeze({__index = table.freeze({
 	Connect = function(signal, callback)
 		-- Connect callback.
 		local connection = nil
@@ -235,7 +235,7 @@ local signalClass = {__index = {
 		-- Unlink class methods.
 		setmetatable(signal, nil)
 	end
-}}
+})})
 
 -- Return signal create function.
 return function()

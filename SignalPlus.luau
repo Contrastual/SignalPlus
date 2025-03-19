@@ -59,8 +59,6 @@ SOFTWARE.
 ]]--
 
 -- Types.
-type CreateSignal = () -> ()
-
 export type Connection = {
 	Disconnect: (connection: Connection) -> (),
 	Connected: boolean
@@ -75,6 +73,7 @@ export type Signal = {
 	DisconnectAll: (signal: Signal) -> (),
 	Destroy: (signal: Signal) -> ()
 }
+type CreateSignal = () -> Signal
 
 -- Thread recycling.
 local freeThread = nil

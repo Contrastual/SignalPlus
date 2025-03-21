@@ -77,28 +77,31 @@ type CreateSignal = () -> Signal
 
 -- Cache frequently used functions.
 local running = coroutine.running
+local create = coroutine.create
 local resume = coroutine.resume
 local yield = coroutine.yield
+local insert = table.insert
 
 -- Thread recycling.
-local freeThread = nil
-local function runCallbackInFreeThread(callback, ...)
-	local thread = freeThread
-	freeThread = nil
+local threads = {}
+local function reusableThreadCall(callback, thread, ...)
 	callback(...)
-	freeThread = thread
+	insert(threads, thread)
 end
-local function createFreeThread()
+local function reusableThread(callback, thread, ...)
+	callback(...)
+	insert(threads, thread)
 	while true do
-		runCallbackInFreeThread(yield())
+		reusableThreadCall(yield())
 	end
 end
-freeThread = coroutine.create(createFreeThread)
-resume(freeThread)
 
 -- Connection class.
 local connectionClass = table.freeze({__index = table.freeze({
 	Disconnect = function(connection)
+		-- Ensure it is already connected.
+		if not connection.Connected then return end
+		
 		-- Remove from linked list.
 		local previous = connection[2]
 		local next = connection[3]
@@ -117,8 +120,6 @@ local connectionClass = table.freeze({__index = table.freeze({
 		connection[2] = nil
 		connection[3] = nil
 		connection[4] = nil
-		-- Unlink class methods.
-		setmetatable(connection, nil)
 	end
 })})
 
@@ -211,12 +212,19 @@ local signalClass = table.freeze({__index = table.freeze({
 		-- Fire to listeners.
 		local node = signal[1]
 		while node do
-			if not freeThread then
-				freeThread = coroutine.create(createFreeThread)
-				resume(freeThread)
+			-- Find or create a thread.
+			local length = #threads
+			local thread = nil
+			if length == 0 then
+				thread = create(reusableThread)
+			else
+				thread = threads[length]
+				threads[length] = nil
 			end
-			task.spawn(freeThread, node[4], ...)
+			-- Run the callback in a seperate thread.
+			resume(thread, node[4], thread, ...)
 			
+			-- Go to the next connection.
 			node = node[3]
 		end
 	end,

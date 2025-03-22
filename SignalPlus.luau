@@ -21,6 +21,8 @@
  +++++++++++++++++++++++++                                                                          
       *++++                                                                                         
 
+v2.3.0
+
 A super fast, memory efficient, open-source script signal module
 for Roblox, with all features of RBXScriptSignals and even more.
 
@@ -59,40 +61,59 @@ SOFTWARE.
 ]]--
 
 -- Types.
+type Function = () -> ()
 export type Connection = {
-	Disconnect: (connection: Connection) -> (),
+	Disconnect: typeof(
+		-- Disconnects the connection.
+		-- To reconnect, make a new connection.
+		function(connection: Connection) end
+	),
 	Connected: boolean
 }
 export type Signal = {
-	Connect: (signal: Signal, callback: () -> ()) -> Connection,
-	Once: (signal: Signal, callback: () -> ()) -> Connection,
-	Wait: (signal: Signal) -> (),
+	Connect: typeof(
+		-- Connects the given function.
+		function(signal: Signal, callback: Function): Connection end
+	),
+	Once: typeof(
+		-- Connects the given function, but disconnects after first fire.
+		function(signal: Signal, callback: Function): Connection end
+	),
+	Wait: typeof(
+		-- Yields the current thread until the next fire.
+		function(signal: Signal) end
+	),
 	
-	Fire: (signal: Signal, ...any) -> (),
+	Fire: typeof(
+		-- Fires all connections and resumes all waiting threads.
+		function(signal: Signal, ...: any) end
+	),
 	
-	DisconnectAll: (signal: Signal) -> (),
-	Destroy: (signal: Signal) -> ()
+	DisconnectAll: typeof(
+		-- Disconnects all connections.
+		function(signal: Signal) end
+	),
+	Destroy: typeof(
+		-- Makes the signal unusable, and disconnects all connections.
+		function(signal: Signal) end
+	),
 }
-type CreateSignal = () -> Signal
+type CreateSignal = typeof(
+	-- Creates a new signal.
+	function(): Signal end
+)
 
--- Cache frequently used functions.
-local running = coroutine.running
-local create = coroutine.create
-local resume = coroutine.resume
-local yield = coroutine.yield
-local insert = table.insert
-
--- Thread recycling.
+-- Setup thread recycling.
 local threads = {}
-local function reusableThreadCall(callback, thread, ...)
+local function reusableThreadCall(callback, ...)
 	callback(...)
-	insert(threads, thread)
+	table.insert(threads, coroutine.running())
 end
-local function reusableThread(callback, thread, ...)
+local function reusableThread(callback, ...)
 	callback(...)
-	insert(threads, thread)
+	table.insert(threads, coroutine.running())
 	while true do
-		reusableThreadCall(yield())
+		reusableThreadCall(coroutine.yield())
 	end
 end
 
@@ -113,7 +134,7 @@ local connectionClass = table.freeze({__index = table.freeze({
 		if next then
 			next[2] = previous
 		end
-		-- Set connected boolean.
+		-- Set connected property.
 		connection.Connected = false
 		-- Clear values.
 		connection[1] = nil
@@ -175,7 +196,7 @@ local signalClass = table.freeze({__index = table.freeze({
 	end,
 	Wait = function(signal)
 		-- Setup connection.
-		local thread = running()
+		local thread = coroutine.running()
 		
 		local connection = nil
 		connection = setmetatable({
@@ -199,30 +220,27 @@ local signalClass = table.freeze({__index = table.freeze({
 				connection.Connected = false
 				
 				-- Resume the thread.
-				resume(thread)
+				task.spawn(thread)
 			end
 		}, connectionClass)
 		signal[1] = connection
 		
 		-- Yield (pause) the current thread.
-		yield()
+		coroutine.yield()
 	end,
 	
 	Fire = function(signal, ...)
 		-- Fire to listeners.
 		local node = signal[1]
 		while node do
-			-- Find or create a thread.
+			-- Find or create a thread, and run the callback in it.
 			local length = #threads
-			local thread = nil
 			if length == 0 then
-				thread = create(reusableThread)
+				task.spawn(reusableThread, node[4], ...)
 			else
-				thread = threads[length]
-				threads[length] = nil
+				task.spawn(threads[length], node[4], ...)
+				threads[length] = nil -- Remove from free threads list.
 			end
-			-- Run the callback in a seperate thread.
-			resume(thread, node[4], thread, ...)
 			
 			-- Go to the next connection.
 			node = node[3]
@@ -233,9 +251,13 @@ local signalClass = table.freeze({__index = table.freeze({
 		local node = signal[1]
 		while node do
 			local next = node[3]
+			
 			node[1] = nil
+			node[2] = nil
 			node[3] = nil
+			node[4] = nil
 			node.Connected = false
+			
 			node = next
 		end
 		signal[1] = nil
@@ -245,12 +267,17 @@ local signalClass = table.freeze({__index = table.freeze({
 		local node = signal[1]
 		while node do
 			local next = node[3]
+			
 			node[1] = nil
+			node[2] = nil
 			node[3] = nil
+			node[4] = nil
 			node.Connected = false
+			
 			node = next
 		end
 		signal[1] = nil
+		
 		-- Unlink class methods.
 		setmetatable(signal, nil)
 	end

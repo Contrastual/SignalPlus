@@ -72,11 +72,11 @@ export type Connection = {
 export type Signal<Parameters...> = {
 	Connect: typeof(
 		-- Connects the given function.
-		function(signal: Signal<Parameters...>, callback: (T...) -> ()): Connection end
+		function(signal: Signal<Parameters...>, callback: (Parameters...) -> ()): Connection end
 	),
 	Once: typeof(
 		-- Connects the given function, but disconnects after first fire.
-		function(signal: Signal<Parameters...>, callback: (T...) -> ()): Connection end
+		function(signal: Signal<Parameters...>, callback: (Parameters...) -> ()): Connection end
 	),
 	Wait: typeof(
 		-- Yields the current thread until the next fire.
@@ -85,7 +85,7 @@ export type Signal<Parameters...> = {
 	
 	Fire: typeof(
 		-- Fires all connections and resumes all waiting threads.
-		function(signal: Signal<Parameters...>, ...: any) end
+		function(signal: Signal<Parameters...>, ...: Parameters...) end
 	),
 	
 	DisconnectAll: typeof(

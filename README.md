@@ -12,11 +12,13 @@ for Roblox, with all features of RBXScriptSignals and even more.
 <br>
 <br>
 
-# ✨ Why Signal+?
-It's simply better.
-- 3x as fast as RBXScriptSignals (BindableEvents).
-- Memory efficient.
-- Incredibly simple.
+# ⚡ Performance, efficiency, features.
+Signal+ is for developers who strive for performance and efficiency.<br>
+And it still has all the features you'll ever need!
+
+**It's perhaps the best of its kind,<br>
+beating the top alternatives like<br>
+GoodSignal and FastSignal.**
 <br>
 <br>
 
@@ -28,7 +30,7 @@ Let's first get the module. There are two ways:
   - Click `Get Model` on the store.
   - Open the ToolBox in Roblox Studio.
   - Go to the `Inventory` tab.
-  - Click on `GameLoader`.
+  - Click on `Signal+`.
 - **Get it from GitHub:**
   - Click `Git` at the top of this post.
   - Go to `Releases`.
@@ -49,15 +51,20 @@ local mySignal = signalPlus() -- Will create a new signal.
 
 ### Signal:
 - `:Connect(function)` -> Connection
+  - Connects the given function.
 - `:Once(function)` -> Connection
-  - Connects a function, but disconnects it after first fire.
+  - Connects the given function, but disconnects after first fire.
 - `:Wait()`
   - Yields the current thread until the next fire.
 - `:Fire()`
+  - Fires all connections and resumes all waiting threads.
 - `:DisconnectAll()`
+  - Disconnects all connections.
 - `:Destroy()`
-  - Makes the signal unusable.
+  - Makes the signal unusable, and disconnects all connections.
 
 ### Connection:
 - `:Disconnect()`
+  - Disconnects the connection.
+To reconnect make a new connection.
 - `.Connected` -> boolean

@@ -21,17 +21,17 @@
  +++++++++++++++++++++++++                                                                          
       *++++                                                                                         
 
-v2.3.0
+v2.4.0
 
-A super fast, memory efficient, open-source script signal module
-for Roblox, with all features of RBXScriptSignals and even more.
+An insanely fast, memory efficient, fully typed, featureful,
+yet lightweight, open-source script signal module for Roblox.
 
 
 GitHub:
 https://github.com/AlexanderLindholt/SignalPlus
 
 Devforum:
-https://devforum.roblox.com/t/signal%EF%BD%9Csuper-fast-featureful-script-signal/3552231
+https://devforum.roblox.com/t/3552231
 
 
 --------------------------------------------------------------------------------
@@ -61,7 +61,6 @@ SOFTWARE.
 ]]--
 
 -- Types.
-type Function = () -> ()
 export type Connection = {
 	Disconnect: typeof(
 		-- Disconnects the connection.
@@ -70,37 +69,37 @@ export type Connection = {
 	),
 	Connected: boolean
 }
-export type Signal = {
+export type Signal<Parameters...> = {
 	Connect: typeof(
 		-- Connects the given function.
-		function(signal: Signal, callback: Function): Connection end
+		function(signal: Signal<Parameters...>, callback: (T...) -> ()): Connection end
 	),
 	Once: typeof(
 		-- Connects the given function, but disconnects after first fire.
-		function(signal: Signal, callback: Function): Connection end
+		function(signal: Signal<Parameters...>, callback: (T...) -> ()): Connection end
 	),
 	Wait: typeof(
 		-- Yields the current thread until the next fire.
-		function(signal: Signal) end
+		function(signal: Signal<Parameters...>) end
 	),
 	
 	Fire: typeof(
 		-- Fires all connections and resumes all waiting threads.
-		function(signal: Signal, ...: any) end
+		function(signal: Signal<Parameters...>, ...: any) end
 	),
 	
 	DisconnectAll: typeof(
 		-- Disconnects all connections.
-		function(signal: Signal) end
+		function(signal: Signal<Parameters...>) end
 	),
 	Destroy: typeof(
 		-- Makes the signal unusable, and disconnects all connections.
-		function(signal: Signal) end
+		function(signal: Signal<Parameters...>) end
 	),
 }
 type CreateSignal = typeof(
 	-- Creates a new signal.
-	function(): Signal end
+	function<Parameters...>(): Signal<Parameters...> end
 )
 
 -- Setup thread recycling.
@@ -148,14 +147,13 @@ local connectionClass = table.freeze({__index = table.freeze({
 local signalClass = table.freeze({__index = table.freeze({
 	Connect = function(signal, callback)
 		-- Setup connection.
-		local connection = nil
-		connection = setmetatable({
+		local connection = setmetatable({
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
+			[4] = callback,
 			
-			Connected = true,
-			[4] = callback
+			Connected = true
 		}, connectionClass)
 		signal[1] = connection
 		
@@ -169,8 +167,6 @@ local signalClass = table.freeze({__index = table.freeze({
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
-			
-			Connected = true,
 			[4] = function() -- Callback.
 				-- Disconnect.
 				local previous = connection[2]
@@ -187,7 +183,9 @@ local signalClass = table.freeze({__index = table.freeze({
 				
 				-- Fire callback.
 				callback()
-			end
+			end,
+			
+			Connected = true
 		}, connectionClass)
 		signal[1] = connection
 		
@@ -203,8 +201,6 @@ local signalClass = table.freeze({__index = table.freeze({
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
-			
-			Connected = false,
 			[4] = function() -- Callback.
 				-- Disconnect.
 				local previous = connection[2]
@@ -217,11 +213,10 @@ local signalClass = table.freeze({__index = table.freeze({
 				if next then
 					next[2] = previous
 				end
-				connection.Connected = false
 				
 				-- Resume the thread.
 				task.spawn(thread)
-			end
+			end,
 		}, connectionClass)
 		signal[1] = connection
 		
@@ -256,7 +251,9 @@ local signalClass = table.freeze({__index = table.freeze({
 			node[2] = nil
 			node[3] = nil
 			node[4] = nil
-			node.Connected = false
+			if node.Connected then
+				node.Connected = false
+			end
 			
 			node = next
 		end
@@ -272,7 +269,9 @@ local signalClass = table.freeze({__index = table.freeze({
 			node[2] = nil
 			node[3] = nil
 			node[4] = nil
-			node.Connected = false
+			if node.Connected then
+				node.Connected = false
+			end
 			
 			node = next
 		end

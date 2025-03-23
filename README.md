@@ -2,8 +2,8 @@
 
 <img src="https://raw.githubusercontent.com/AlexanderLindholt/SignalPlus/refs/heads/main/Logo.png"></img>
 
-A super fast, memory efficient, open-source script signal module<br>
-for Roblox, with all features of RBXScriptSignals and even more.
+An insanely fast, memory efficient, fully typed, featureful,<br>
+lightweight, open-source script signal module for Roblox.
 
 [<img src="https://raw.githubusercontent.com/AlexanderLindholt/LinkButtons/refs/heads/main/Static/Module.png"></img>](https://create.roblox.com/store/asset/118793070598362) ​ [<img src="https://raw.githubusercontent.com/AlexanderLindholt/LinkButtons/refs/heads/main/Static/Devforum.png"></img>](https://devforum.roblox.com/t/signal%EF%BD%9Csuper-fast-featureful-script-signal/3552231)
 </div>

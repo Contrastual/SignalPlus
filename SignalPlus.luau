@@ -21,7 +21,7 @@
  +++++++++++++++++++++++++                                                                          
       *++++                                                                                         
 
-v2.4.0
+v2.4.1
 
 An insanely fast, memory efficient, fully typed, featureful,
 yet lightweight, open-source script signal module for Roblox.
@@ -167,7 +167,7 @@ local signalClass = table.freeze({__index = table.freeze({
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
-			[4] = function() -- Callback.
+			[4] = function(...) -- Callback.
 				-- Disconnect.
 				local previous = connection[2]
 				local next = connection[3]
@@ -179,10 +179,11 @@ local signalClass = table.freeze({__index = table.freeze({
 				if next then
 					next[2] = previous
 				end
+				connection[4] = nil
 				connection.Connected = false
 				
 				-- Fire callback.
-				callback()
+				callback(...)
 			end,
 			
 			Connected = true
@@ -213,6 +214,7 @@ local signalClass = table.freeze({__index = table.freeze({
 				if next then
 					next[2] = previous
 				end
+				connection[4] = nil
 				
 				-- Resume the thread.
 				task.spawn(thread)
@@ -233,8 +235,9 @@ local signalClass = table.freeze({__index = table.freeze({
 			if length == 0 then
 				task.spawn(reusableThread, node[4], ...)
 			else
-				task.spawn(threads[length], node[4], ...)
+				local thread = threads[length]
 				threads[length] = nil -- Remove from free threads list.
+				task.spawn(thread, node[4], ...)
 			end
 			
 			-- Go to the next connection.

@@ -21,7 +21,7 @@
  +++++++++++++++++++++++++                                                                          
       *++++                                                                                         
 
-v2.4.1
+v2.5.0
 
 An insanely fast, memory efficient, fully typed, featureful,
 yet lightweight, open-source script signal module for Roblox.
@@ -80,7 +80,7 @@ export type Signal<Parameters...> = {
 	),
 	Wait: typeof(
 		-- Yields the current thread until the next fire.
-		function(signal: Signal<Parameters...>) end
+		function(signal: Signal<Parameters...>): Parameters... end
 	),
 	
 	Fire: typeof(
@@ -194,15 +194,16 @@ local signalClass = table.freeze({__index = table.freeze({
 		return connection
 	end,
 	Wait = function(signal)
-		-- Setup connection.
+		-- Save the thread (this) to resume later.
 		local thread = coroutine.running()
 		
+		-- Setup connection.
 		local connection = nil
 		connection = setmetatable({
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
-			[4] = function() -- Callback.
+			[4] = function(...) -- Callback.
 				-- Disconnect.
 				local previous = connection[2]
 				local next = connection[3]
@@ -217,17 +218,17 @@ local signalClass = table.freeze({__index = table.freeze({
 				connection[4] = nil
 				
 				-- Resume the thread.
-				task.spawn(thread)
+				task.spawn(thread, ...)
 			end,
 		}, connectionClass)
 		signal[1] = connection
 		
-		-- Yield (pause) the current thread.
-		coroutine.yield()
+		-- Yield until the next fire, and return the arguments on resume.
+		return coroutine.yield()
 	end,
 	
 	Fire = function(signal, ...)
-		-- Fire to listeners.
+		-- Fire all callbacks.
 		local node = signal[1]
 		while node do
 			-- Find or create a thread, and run the callback in it.
@@ -254,7 +255,7 @@ local signalClass = table.freeze({__index = table.freeze({
 			node[2] = nil
 			node[3] = nil
 			node[4] = nil
-			if node.Connected then
+			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
 				node.Connected = false
 			end
 			
@@ -272,7 +273,7 @@ local signalClass = table.freeze({__index = table.freeze({
 			node[2] = nil
 			node[3] = nil
 			node[4] = nil
-			if node.Connected then
+			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
 				node.Connected = false
 			end
 			

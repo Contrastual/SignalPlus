@@ -21,10 +21,10 @@
  +++++++++++++++++++++++++                                                                          
       *++++                                                                                         
 
-v2.5.0
+v2.6.0
 
 An insanely fast, memory efficient, fully typed, featureful,
-yet lightweight, open-source script signal module for Roblox.
+lightweight, open-source script signal module for Roblox.
 
 
 GitHub:
@@ -84,7 +84,7 @@ export type Signal<Parameters...> = {
 	),
 	
 	Fire: typeof(
-		-- Fires all connections and resumes all waiting threads.
+		-- Fires all callbacks and resumes all waiting threads.
 		function(signal: Signal<Parameters...>, ...: Parameters...) end
 	),
 	
@@ -93,7 +93,7 @@ export type Signal<Parameters...> = {
 		function(signal: Signal<Parameters...>) end
 	),
 	Destroy: typeof(
-		-- Makes the signal unusable, and disconnects all connections.
+		-- Disconnects all connections, and makes the signal unusable.
 		function(signal: Signal<Parameters...>) end
 	),
 }
@@ -101,6 +101,11 @@ type CreateSignal = typeof(
 	-- Creates a new signal.
 	function<Parameters...>(): Signal<Parameters...> end
 )
+
+-- No operation function.
+local function noop()
+	
+end
 
 -- Setup thread recycling.
 local threads = {}
@@ -199,7 +204,7 @@ local signalClass = table.freeze({__index = table.freeze({
 		
 		-- Setup connection.
 		local connection = nil
-		connection = setmetatable({
+		connection = {
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
@@ -220,7 +225,7 @@ local signalClass = table.freeze({__index = table.freeze({
 				-- Resume the thread.
 				task.spawn(thread, ...)
 			end,
-		}, connectionClass)
+		}
 		signal[1] = connection
 		
 		-- Yield until the next fire, and return the arguments on resume.
@@ -281,8 +286,13 @@ local signalClass = table.freeze({__index = table.freeze({
 		end
 		signal[1] = nil
 		
-		-- Unlink class methods.
-		setmetatable(signal, nil)
+		-- Link all methods to noop (no operation) function.
+		signal.Connect = noop
+		signal.Once = noop
+		signal.Wait = noop
+		signal.Fire = noop
+		signal.DisconnectAll = noop
+		signal.Destroyed = noop
 	end
 })})
 

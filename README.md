@@ -18,7 +18,7 @@ And it still has all the features you'll ever need!
 
 **It's perhaps the best of its kind,<br>
 beating the top alternatives like<br>
-GoodSignal and FastSignal.**
+Good-, Lemon- and FastSignal.**
 
 *An unprecedented level of optimization for<br>
 script signals, available for completely free!*

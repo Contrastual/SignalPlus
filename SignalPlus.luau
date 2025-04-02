@@ -7,21 +7,21 @@
        ++++++++   ===                                                                               
     ++++++++++   ====                                                  ====                         
      ++++++                                                            ====                         
-       +++++     ====     ====== ====+  ==== ======+      ========     ====        ====             
-        +++++    ====    ============+  =============    ===========   ====        ====             
-         ++++    ====   ====     ====+  =====    ====           ====   ====        ====             
-         ++++    ====   ====     ====+  =====    ====     ==========   ====    =============        
-         ++++    ====   ====     ====+  =====    ====   ======  ====   ====    ++++====++++=        
-       ++++++    ====   =====   =====+  =====    ====  ====     ====   ====        ====    +++++++++
-   ++++++++++    ====    ============+  =====    ====   ============   ====   ++++ ==== ++++++++++++
-  +++++++        ====            ====+  ====     ====   + ====  ====   ==== ++++++++  +++++++*      
- +++++                  ====+    ==== +++++++++++++++++++++++++++++++++++++++++++++++++++++         
+       +++++     ====     ====== =====  ==== =======      ========     ====        ====             
+        +++++    ====    =============  =============    ===========   ====        ====             
+         ++++    ====   ====     =====  =====    ====           ====   ====        ====             
+         ++++    ====   ====     =====  =====    ====     ==========   ====    =============        
+         ++++    ====   ====     =====  =====    ====   ======  ====   ====    =============        
+       ++++++    ====   =====   ======  =====    ====  ====     ====   ====        ====    +++++++++
+   ++++++++++    ====    =============  =====    ====   ============   ====   ++++ ==== ++++++++++++
+  +++++++        ====            =====  ====     ====   + ====  ====   ==== ++++++++  ++++++++      
+ +++++                  ==== +++ ==== +++++++++++++++++++++++++++++++++++++++++++++++++++++         
  ++++        +++++++++++ =========== +++++++++++++++++++++++++++++++++++++++      ++++++            
-++++++++*++++++++++++++++++                                                         +               
++++++++++++++++++++++++++++                                                         +               
  +++++++++++++++++++++++++                                                                          
-      *++++                                                                                         
+      +++++                                                                                         
 
-v2.6.0
+v2.6.1
 
 An insanely fast, memory efficient, fully typed, featureful,
 lightweight, open-source script signal module for Roblox.
@@ -99,11 +99,11 @@ export type Signal<Parameters...> = {
 }
 type CreateSignal = typeof(
 	-- Creates a new signal.
-	function<Parameters...>(): Signal<Parameters...> end
+	function(): Signal end
 )
 
 -- No operation function.
-local function noop()
+local function noOperation()
 	
 end
 
@@ -151,7 +151,7 @@ local connectionClass = table.freeze({__index = table.freeze({
 -- Signal class.
 local signalClass = table.freeze({__index = table.freeze({
 	Connect = function(signal, callback)
-		-- Setup connection.
+		-- Create connection.
 		local connection = setmetatable({
 			[1] = signal,
 			[2] = nil, -- Previous.
@@ -160,20 +160,22 @@ local signalClass = table.freeze({__index = table.freeze({
 			
 			Connected = true
 		}, connectionClass)
+		
+		-- Add connection.
 		signal[1] = connection
 		
 		-- Return connection.
 		return connection
 	end,
 	Once = function(signal, callback)
-		-- Setup connection.
+		-- Create connection.
 		local connection = nil
 		connection = setmetatable({
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
 			[4] = function(...) -- Callback.
-				-- Disconnect.
+				-- Remove from linked list.
 				local previous = connection[2]
 				local next = connection[3]
 				if previous then
@@ -184,8 +186,13 @@ local signalClass = table.freeze({__index = table.freeze({
 				if next then
 					next[2] = previous
 				end
-				connection[4] = nil
+				-- Set connected property.
 				connection.Connected = false
+				-- Clear values.
+				connection[1] = nil
+				connection[2] = nil
+				connection[3] = nil
+				connection[4] = nil
 				
 				-- Fire callback.
 				callback(...)
@@ -193,23 +200,25 @@ local signalClass = table.freeze({__index = table.freeze({
 			
 			Connected = true
 		}, connectionClass)
+		
+		-- Add connection.
 		signal[1] = connection
 		
 		-- Return connection.
 		return connection
 	end,
 	Wait = function(signal)
-		-- Save the thread (this) to resume later.
+		-- Save this thread to resume later.
 		local thread = coroutine.running()
 		
-		-- Setup connection.
+		-- Create connection.
 		local connection = nil
 		connection = {
 			[1] = signal,
 			[2] = nil, -- Previous.
 			[3] = signal[1], -- Next.
 			[4] = function(...) -- Callback.
-				-- Disconnect.
+				-- Remove from linked list.
 				local previous = connection[2]
 				local next = connection[3]
 				if previous then
@@ -220,12 +229,18 @@ local signalClass = table.freeze({__index = table.freeze({
 				if next then
 					next[2] = previous
 				end
+				-- Clear values.
+				connection[1] = nil
+				connection[2] = nil
+				connection[3] = nil
 				connection[4] = nil
 				
 				-- Resume the thread.
 				task.spawn(thread, ...)
 			end,
 		}
+		
+		-- Add connection.
 		signal[1] = connection
 		
 		-- Yield until the next fire, and return the arguments on resume.
@@ -254,45 +269,53 @@ local signalClass = table.freeze({__index = table.freeze({
 	DisconnectAll = function(signal)
 		local node = signal[1]
 		while node do
+			-- Cache next node before removing value.
 			local next = node[3]
 			
+			-- Set connected property.
+			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
+				node.Connected = false
+			end
+			-- Remove values.
 			node[1] = nil
 			node[2] = nil
 			node[3] = nil
 			node[4] = nil
-			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
-				node.Connected = false
-			end
 			
+			-- Go to the next connection.
 			node = next
 		end
-		signal[1] = nil
+		signal[1] = nil -- Reset head value.
 	end,
 	Destroy = function(signal)
 		-- Disconnect all.
 		local node = signal[1]
 		while node do
+			-- Cache next node before removing value.
 			local next = node[3]
 			
+			-- Set connected property.
+			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
+				node.Connected = false
+			end
+			-- Remove values.
 			node[1] = nil
 			node[2] = nil
 			node[3] = nil
 			node[4] = nil
-			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
-				node.Connected = false
-			end
 			
+			-- Go to the next connection.
 			node = next
 		end
-		signal[1] = nil
+		signal[1] = nil -- Reset head value.
 		
-		-- Link all methods to noop (no operation) function.
-		signal.Connect = noop
-		signal.Once = noop
-		signal.Wait = noop
-		signal.Fire = noop
-		signal.DisconnectAll = noop
-		signal.Destroyed = noop
+		-- Link all methods to no-operation function.
+		signal.Connect = noOperation
+		signal.Once = noOperation
+		signal.Wait = noOperation
+		signal.Fire = noOperation
+		signal.DisconnectAll = noOperation
+		signal.Destroyed = noOperation
 	end
 })})
 

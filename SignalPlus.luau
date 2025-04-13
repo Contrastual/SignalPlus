@@ -106,9 +106,7 @@ local function reusableThreadCall(callback, thread, ...)
 	callback(...)
 	table.insert(threads, thread)
 end
-local function reusableThread(callback, ...)
-	callback(...)
-	table.insert(threads, coroutine.running())
+local function reusableThread()
 	while true do
 		reusableThreadCall(coroutine.yield())
 	end
@@ -208,7 +206,9 @@ local Signal = table.freeze({__index = table.freeze({
 			-- Find or create a thread, and run the callback in it.
 			local length = #threads
 			if length == 0 then
-				task.spawn(reusableThread, connection.Callback, ...)
+				local thread = coroutine.create(reusableThread)
+				coroutine.resume(thread)
+				task.spawn(thread, connection.Callback, thread, ...)
 			else
 				local thread = threads[length]
 				threads[length] = nil -- Remove from free threads list.

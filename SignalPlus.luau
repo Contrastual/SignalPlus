@@ -1,5 +1,4 @@
 --!optimize 2
---!native
 
 --[[
 
@@ -21,7 +20,7 @@
  +++++++++++++++++++++++++                                                                          
       +++++                                                                                         
 
-v2.6.1
+v2.7.0
 
 An insanely fast, memory efficient, fully typed, featureful,
 lightweight, open-source script signal module for Roblox.
@@ -67,7 +66,6 @@ export type Connection = {
 		-- To reconnect, make a new connection.
 		function(connection: Connection) end
 	),
-	Connected: boolean
 }
 export type Signal<Parameters...> = {
 	Connect: typeof(
@@ -102,16 +100,11 @@ type CreateSignal = typeof(
 	function(): Signal end
 )
 
--- No operation function.
-local function noOperation()
-	
-end
-
 -- Setup thread recycling.
 local threads = {}
-local function reusableThreadCall(callback, ...)
+local function reusableThreadCall(callback, thread, ...)
 	callback(...)
-	table.insert(threads, coroutine.running())
+	table.insert(threads, thread)
 end
 local function reusableThread(callback, ...)
 	callback(...)
@@ -122,90 +115,59 @@ local function reusableThread(callback, ...)
 end
 
 -- Connection class.
-local connectionClass = table.freeze({__index = table.freeze({
+local Connection = table.freeze({__index = table.freeze({
 	Disconnect = function(connection)
-		-- Ensure it is already connected.
-		if not connection.Connected then return end
-		
 		-- Remove from linked list.
-		local previous = connection[2]
-		local next = connection[3]
-		if previous then
-			previous[3] = next
-		else
-			connection[1][1] = next
-		end
+		local previous = connection.Previous
+		local next = connection.Next
+		previous.Next = next
 		if next then
-			next[2] = previous
+			next.Previous = previous
 		end
-		-- Set connected property.
-		connection.Connected = false
-		-- Clear values.
-		connection[1] = nil
-		connection[2] = nil
-		connection[3] = nil
-		connection[4] = nil
 	end
 })})
 
 -- Signal class.
-local signalClass = table.freeze({__index = table.freeze({
+local Signal = table.freeze({__index = table.freeze({
 	Connect = function(signal, callback)
 		-- Create connection.
-		local connection = setmetatable({
-			[1] = signal,
-			[2] = nil, -- Previous.
-			[3] = signal[1], -- Next.
-			[4] = callback,
-			
-			Connected = true
-		}, connectionClass)
+		local connection = {
+			Previous = signal,
+			Next = signal.Next,
+			Callback = callback
+		}
 		
 		-- Add connection.
-		signal[1] = connection
+		signal.Next = connection
 		
 		-- Return connection.
-		return connection
+		return setmetatable(connection, Connection)
 	end,
 	Once = function(signal, callback)
 		-- Create connection.
 		local connection = nil
-		connection = setmetatable({
-			[1] = signal,
-			[2] = nil, -- Previous.
-			[3] = signal[1], -- Next.
-			[4] = function(...) -- Callback.
+		connection = {
+			Previous = signal,
+			Next = signal.Next,
+			Callback = function(...)
 				-- Remove from linked list.
-				local previous = connection[2]
-				local next = connection[3]
-				if previous then
-					previous[3] = next
-				else
-					signal[1] = next
-				end
+				local previous = connection.Previous
+				local next = connection.Next
+				previous.Next = next
 				if next then
-					next[2] = previous
+					next.Previous = previous
 				end
-				-- Set connected property.
-				connection.Connected = false
-				-- Clear values.
-				connection[1] = nil
-				connection[2] = nil
-				connection[3] = nil
-				connection[4] = nil
 				
 				-- Fire callback.
 				callback(...)
-			end,
-			
-			Connected = true
-		}, connectionClass)
+			end
+		}
 		
 		-- Add connection.
-		signal[1] = connection
+		signal.Next = connection
 		
 		-- Return connection.
-		return connection
+		return setmetatable(connection, Connection)
 	end,
 	Wait = function(signal)
 		-- Save this thread to resume later.
@@ -214,112 +176,63 @@ local signalClass = table.freeze({__index = table.freeze({
 		-- Create connection.
 		local connection = nil
 		connection = {
-			[1] = signal,
-			[2] = nil, -- Previous.
-			[3] = signal[1], -- Next.
-			[4] = function(...) -- Callback.
+			Previous = signal,
+			Next = signal.Next,
+			Callback = function(...)
 				-- Remove from linked list.
-				local previous = connection[2]
-				local next = connection[3]
-				if previous then
-					previous[3] = next
-				else
-					signal[1] = next
-				end
+				local previous = connection.Previous
+				local next = connection.Next
+				previous.Next = next
 				if next then
-					next[2] = previous
+					next.Previous = previous
 				end
-				-- Clear values.
-				connection[1] = nil
-				connection[2] = nil
-				connection[3] = nil
-				connection[4] = nil
 				
 				-- Resume the thread.
-				task.spawn(thread, ...)
+				if coroutine.status(thread) == "suspended" then -- To avoid errors.
+					task.spawn(thread, ...)
+				end
 			end,
 		}
 		
 		-- Add connection.
-		signal[1] = connection
+		signal.Next = connection
 		
 		-- Yield until the next fire, and return the arguments on resume.
 		return coroutine.yield()
 	end,
 	
 	Fire = function(signal, ...)
-		-- Fire all callbacks.
-		local node = signal[1]
-		while node do
+		-- Fire all callbacks in new threads.
+		local connection = signal.Next
+		while connection do
 			-- Find or create a thread, and run the callback in it.
 			local length = #threads
 			if length == 0 then
-				task.spawn(reusableThread, node[4], ...)
+				task.spawn(reusableThread, connection.Callback, ...)
 			else
 				local thread = threads[length]
 				threads[length] = nil -- Remove from free threads list.
-				task.spawn(thread, node[4], ...)
+				task.spawn(thread, connection.Callback, thread, ...)
 			end
 			
 			-- Go to the next connection.
-			node = node[3]
+			connection = connection.Next
 		end
 	end,
 	
 	DisconnectAll = function(signal)
-		local node = signal[1]
-		while node do
-			-- Cache next node before removing value.
-			local next = node[3]
-			
-			-- Set connected property.
-			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
-				node.Connected = false
-			end
-			-- Remove values.
-			node[1] = nil
-			node[2] = nil
-			node[3] = nil
-			node[4] = nil
-			
-			-- Go to the next connection.
-			node = next
-		end
-		signal[1] = nil -- Reset head value.
+		signal.Next = nil
 	end,
 	Destroy = function(signal)
 		-- Disconnect all.
-		local node = signal[1]
-		while node do
-			-- Cache next node before removing value.
-			local next = node[3]
-			
-			-- Set connected property.
-			if node.Connected then -- Since 'Wait' connections don't have the 'Connected' property.
-				node.Connected = false
-			end
-			-- Remove values.
-			node[1] = nil
-			node[2] = nil
-			node[3] = nil
-			node[4] = nil
-			
-			-- Go to the next connection.
-			node = next
-		end
-		signal[1] = nil -- Reset head value.
+		signal.Next = nil
 		
-		-- Link all methods to no-operation function.
-		signal.Connect = noOperation
-		signal.Once = noOperation
-		signal.Wait = noOperation
-		signal.Fire = noOperation
-		signal.DisconnectAll = noOperation
-		signal.Destroyed = noOperation
+		-- Unlink metatable.
+		setmetatable(signal, nil)
 	end
 })})
 
 -- Return signal create function.
 return function()
-	return setmetatable({}, signalClass)
+	return setmetatable({}, Signal)
 end :: CreateSignal

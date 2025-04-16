@@ -20,10 +20,10 @@
  +++++++++++++++++++++++++                                                                          
       +++++                                                                                         
 
-v2.9.0
+v2.9.1
 
-An insanely fast, memory efficient, fully typed, featureful,
-lightweight, open-source script signal module for Roblox.
+An insanely fast, lightweight, fully typed and documented
+open-source signal module for Roblox, with custom types.
 
 
 GitHub:
@@ -113,125 +113,127 @@ local function reusableThread()
 end
 
 -- Connection class.
-local Connection = {__index = {
-	Disconnect = function(connection)
-		-- Remove from linked list.
-		local previous = connection.Previous
-		local next = connection.Next
-		previous.Next = next
-		if next then
-			next.Previous = previous
-		end
+local Connection = {}
+Connection.__index = Connection
+
+Connection.Disconnect = function(connection)
+	-- Remove from linked list.
+	local previous = connection.Previous
+	local next = connection.Next
+	previous.Next = next
+	if next then
+		next.Previous = previous
 	end
-}}
+end
 
 -- Signal class.
-local Signal = {__index = {
-	Connect = function(signal, callback)
-		-- Create connection.
-		local connection = {
-			Previous = signal,
-			Next = signal.Next,
-			Callback = callback
-		}
-		
-		-- Add connection.
-		signal.Next = connection
-		
-		-- Return connection.
-		return setmetatable(connection, Connection)
-	end,
-	Once = function(signal, callback)
-		-- Create connection.
-		local connection = nil
-		connection = {
-			Previous = signal,
-			Next = signal.Next,
-			Callback = function(...)
-				-- Remove from linked list.
-				local previous = connection.Previous
-				local next = connection.Next
-				previous.Next = next
-				if next then
-					next.Previous = previous
-				end
-				
-				-- Fire callback.
-				callback(...)
-			end
-		}
-		
-		-- Add connection.
-		signal.Next = connection
-		
-		-- Return connection.
-		return setmetatable(connection, Connection)
-	end,
-	Wait = function(signal)
-		-- Save this thread to resume later.
-		local thread = coroutine.running()
-		
-		-- Create connection.
-		local connection = nil
-		connection = {
-			Previous = signal,
-			Next = signal.Next,
-			Callback = function(...)
-				-- Remove from linked list.
-				local previous = connection.Previous
-				local next = connection.Next
-				previous.Next = next
-				if next then
-					next.Previous = previous
-				end
-				
-				-- Resume the thread.
-				if coroutine.status(thread) == "suspended" then -- To avoid errors.
-					task.spawn(thread, ...)
-				end
-			end
-		}
-		
-		-- Add connection.
-		signal.Next = connection
-		
-		-- Yield until the next fire, and return the arguments on resume.
-		return coroutine.yield()
-	end,
+local Signal = {}
+Signal.__index = Signal
+
+Signal.Connect = function(signal, callback)
+	-- Create connection.
+	local connection = {
+		Previous = signal,
+		Next = signal.Next,
+		Callback = callback
+	}
 	
-	Fire = function(signal, ...)
-		-- Fire all callbacks in new threads.
-		local connection = signal.Next
-		while connection do
-			-- Find or create a thread, and run the callback in it.
-			local length = #threads
-			if length == 0 then
-				local thread = coroutine.create(reusableThread)
-				coroutine.resume(thread)
-				task.spawn(thread, connection.Callback, thread, ...)
-			else
-				local thread = threads[length]
-				threads[length] = nil -- Remove from free threads list.
-				task.spawn(thread, connection.Callback, thread, ...)
+	-- Add connection.
+	signal.Next = connection
+	
+	-- Return connection.
+	return setmetatable(connection, Connection)
+end
+Signal.Once = function(signal, callback)
+	-- Create connection.
+	local connection = nil
+	connection = {
+		Previous = signal,
+		Next = signal.Next,
+		Callback = function(...)
+			-- Remove from linked list.
+			local previous = connection.Previous
+			local next = connection.Next
+			previous.Next = next
+			if next then
+				next.Previous = previous
 			end
 			
-			-- Go to the next connection.
-			connection = connection.Next
+			-- Fire callback.
+			callback(...)
 		end
-	end,
+	}
 	
-	DisconnectAll = function(signal)
-		-- Remove linked list reference, allowing for garbage collection.
-		signal.Next = nil
-	end,
-	Destroy = function(signal)
-		-- Remove linked list reference, allowing for garbage collection.
-		signal.Next = nil
+	-- Add connection.
+	signal.Next = connection
+	
+	-- Return connection.
+	return setmetatable(connection, Connection)
+end
+Signal.Wait = function(signal)
+	-- Save this thread to resume later.
+	local thread = coroutine.running()
+	
+	-- Create connection.
+	local connection = nil
+	connection = {
+		Previous = signal,
+		Next = signal.Next,
+		Callback = function(...)
+			-- Remove from linked list.
+			local previous = connection.Previous
+			local next = connection.Next
+			previous.Next = next
+			if next then
+				next.Previous = previous
+			end
+				
+			-- Resume the thread.
+			if coroutine.status(thread) == "suspended" then -- To avoid errors.
+				task.spawn(thread, ...)
+			end
+		end
+	}
+	
+	-- Add connection.
+	signal.Next = connection
+	
+	-- Yield until the next fire, and return the arguments on resume.
+	return coroutine.yield()
+end
+
+Signal.Fire = function(signal, ...)
+	-- Fire all callbacks in new threads.
+	local connection = signal.Next
+	while connection do
+		-- Find or create a thread, and run the callback in it.
+		local length = #threads
+		if length == 0 then
+			local thread = coroutine.create(reusableThread)
+			coroutine.resume(thread)
+			task.spawn(thread, connection.Callback, thread, ...)
+		else
+			local thread = threads[length]
+			threads[length] = nil -- Remove from free threads list.
+			task.spawn(thread, connection.Callback, thread, ...)
+		end
 		
-		-- Unlink metatable.
-		setmetatable(signal, nil)
+		-- Go to the next connection.
+		connection = connection.Next
 	end
-}}
+end
+
+Signal.DisconnectAll = function(signal)
+	-- Remove linked list reference, allowing for garbage collection.
+	signal.Next = nil
+end
+Signal.Destroy = function(signal)
+	-- Remove linked list reference, allowing for garbage collection.
+	signal.Next = nil
+	
+	-- Unlink metatable.
+	setmetatable(signal, nil)
+end
 
 -- Signal creation.
 return function()

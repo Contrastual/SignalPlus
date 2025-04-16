@@ -20,7 +20,7 @@
  +++++++++++++++++++++++++                                                                          
       +++++                                                                                         
 
-v2.8.0
+v2.9.0
 
 An insanely fast, memory efficient, fully typed, featureful,
 lightweight, open-source script signal module for Roblox.
@@ -77,7 +77,7 @@ export type Signal<Parameters...> = {
 		function(signal: Signal<Parameters...>, callback: (Parameters...) -> ()): Connection end
 	),
 	Wait: typeof(
-		-- Yields the current thread until the next fire.
+		-- Yields the calling thread until the next fire.
 		function(signal: Signal<Parameters...>): Parameters... end
 	),
 	
@@ -100,15 +100,20 @@ type CreateSignal = typeof(
 	function(): Signal end
 )
 
--- Callback thread.
-local function callbackThread(callback)
+-- Setup thread recycling.
+local threads = {}
+local function reusableThreadCall(callback, thread, ...)
+	callback(...)
+	table.insert(threads, thread)
+end
+local function reusableThread()
 	while true do
-		callback(coroutine.yield())
+		reusableThreadCall(coroutine.yield())
 	end
 end
 
 -- Connection class.
-local Connection = table.freeze({__index = table.freeze({
+local Connection = {__index = {
 	Disconnect = function(connection)
 		-- Remove from linked list.
 		local previous = connection.Previous
@@ -117,20 +122,17 @@ local Connection = table.freeze({__index = table.freeze({
 		if next then
 			next.Previous = previous
 		end
-		
-		-- Close callback thread.
-		coroutine.close(connection.Thread)
 	end
-})})
+}}
 
 -- Signal class.
-local Signal = table.freeze({__index = table.freeze({
+local Signal = {__index = {
 	Connect = function(signal, callback)
 		-- Create connection.
 		local connection = {
 			Previous = signal,
 			Next = signal.Next,
-			Thread = task.spawn(callbackThread, callback)
+			Callback = callback
 		}
 		
 		-- Add connection.
@@ -145,7 +147,7 @@ local Signal = table.freeze({__index = table.freeze({
 		connection = {
 			Previous = signal,
 			Next = signal.Next,
-			Thread = task.spawn(callbackThread, function(...)
+			Callback = function(...)
 				-- Remove from linked list.
 				local previous = connection.Previous
 				local next = connection.Next
@@ -156,7 +158,7 @@ local Signal = table.freeze({__index = table.freeze({
 				
 				-- Fire callback.
 				callback(...)
-			end)
+			end
 		}
 		
 		-- Add connection.
@@ -174,7 +176,7 @@ local Signal = table.freeze({__index = table.freeze({
 		connection = {
 			Previous = signal,
 			Next = signal.Next,
-			Thread = task.spawn(callbackThread, function(...)
+			Callback = function(...)
 				-- Remove from linked list.
 				local previous = connection.Previous
 				local next = connection.Next
@@ -187,7 +189,7 @@ local Signal = table.freeze({__index = table.freeze({
 				if coroutine.status(thread) == "suspended" then -- To avoid errors.
 					task.spawn(thread, ...)
 				end
-			end)
+			end
 		}
 		
 		-- Add connection.
@@ -198,11 +200,20 @@ local Signal = table.freeze({__index = table.freeze({
 	end,
 	
 	Fire = function(signal, ...)
-		-- Resume all callback threads.
+		-- Fire all callbacks in new threads.
 		local connection = signal.Next
 		while connection do
-			-- Resume the connection's callback thread.
-			task.spawn(connection.Thread, ...)
+			-- Find or create a thread, and run the callback in it.
+			local length = #threads
+			if length == 0 then
+				local thread = coroutine.create(reusableThread)
+				coroutine.resume(thread)
+				task.spawn(thread, connection.Callback, thread, ...)
+			else
+				local thread = threads[length]
+				threads[length] = nil -- Remove from free threads list.
+				task.spawn(thread, connection.Callback, thread, ...)
+			end
 			
 			-- Go to the next connection.
 			connection = connection.Next
@@ -210,48 +221,19 @@ local Signal = table.freeze({__index = table.freeze({
 	end,
 	
 	DisconnectAll = function(signal)
-		local connection = signal.Next
-		if connection then
-			-- Close all callback threads.
-			while true do
-				-- Close callback thread.
-				coroutine.close(connection.Thread)
-				
-				-- Go to the next connection.
-				connection = connection.Next
-				-- Verify connection.
-				if not connection then break end
-			end
-			
-			-- Remove linked list reference, allowing for garbage collection.
-			signal.Next = nil
-		end
+		-- Remove linked list reference, allowing for garbage collection.
+		signal.Next = nil
 	end,
 	Destroy = function(signal)
-		-- Disconnect all connections.
-		local connection = signal.Next
-		if connection then
-			-- Close all callback threads.
-			while true do
-				-- Close callback thread.
-				coroutine.close(connection.Thread)
-				
-				-- Go to the next connection.
-				connection = connection.Next
-				-- Verify connection.
-				if not connection then break end
-			end
-			
-			-- Remove linked list reference, allowing for garbage collection.
-			signal.Next = nil
-		end
+		-- Remove linked list reference, allowing for garbage collection.
+		signal.Next = nil
 		
-		-- Unlink methods.
+		-- Unlink metatable.
 		setmetatable(signal, nil)
 	end
-})})
+}}
 
--- Return signal create function.
+-- Signal creation.
 return function()
 	return setmetatable({}, Signal)
 end :: CreateSignal

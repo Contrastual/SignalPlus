@@ -20,7 +20,7 @@
  +++++++++++++++++++++++++                                                                          
       +++++                                                                                         
 
-v2.7.0
+v2.8.0
 
 An insanely fast, memory efficient, fully typed, featureful,
 lightweight, open-source script signal module for Roblox.
@@ -100,15 +100,10 @@ type CreateSignal = typeof(
 	function(): Signal end
 )
 
--- Setup thread recycling.
-local threads = {}
-local function reusableThreadCall(callback, thread, ...)
-	callback(...)
-	table.insert(threads, thread)
-end
-local function reusableThread()
+-- Callback thread.
+local function callbackThread(callback)
 	while true do
-		reusableThreadCall(coroutine.yield())
+		callback(coroutine.yield())
 	end
 end
 
@@ -122,6 +117,9 @@ local Connection = table.freeze({__index = table.freeze({
 		if next then
 			next.Previous = previous
 		end
+		
+		-- Close callback thread.
+		coroutine.close(connection.Thread)
 	end
 })})
 
@@ -132,7 +130,7 @@ local Signal = table.freeze({__index = table.freeze({
 		local connection = {
 			Previous = signal,
 			Next = signal.Next,
-			Callback = callback
+			Thread = task.spawn(callbackThread, callback)
 		}
 		
 		-- Add connection.
@@ -147,7 +145,7 @@ local Signal = table.freeze({__index = table.freeze({
 		connection = {
 			Previous = signal,
 			Next = signal.Next,
-			Callback = function(...)
+			Thread = task.spawn(callbackThread, function(...)
 				-- Remove from linked list.
 				local previous = connection.Previous
 				local next = connection.Next
@@ -158,7 +156,7 @@ local Signal = table.freeze({__index = table.freeze({
 				
 				-- Fire callback.
 				callback(...)
-			end
+			end)
 		}
 		
 		-- Add connection.
@@ -176,7 +174,7 @@ local Signal = table.freeze({__index = table.freeze({
 		connection = {
 			Previous = signal,
 			Next = signal.Next,
-			Callback = function(...)
+			Thread = task.spawn(callbackThread, function(...)
 				-- Remove from linked list.
 				local previous = connection.Previous
 				local next = connection.Next
@@ -189,7 +187,7 @@ local Signal = table.freeze({__index = table.freeze({
 				if coroutine.status(thread) == "suspended" then -- To avoid errors.
 					task.spawn(thread, ...)
 				end
-			end,
+			end)
 		}
 		
 		-- Add connection.
@@ -200,20 +198,11 @@ local Signal = table.freeze({__index = table.freeze({
 	end,
 	
 	Fire = function(signal, ...)
-		-- Fire all callbacks in new threads.
+		-- Resume all callback threads.
 		local connection = signal.Next
 		while connection do
-			-- Find or create a thread, and run the callback in it.
-			local length = #threads
-			if length == 0 then
-				local thread = coroutine.create(reusableThread)
-				coroutine.resume(thread)
-				task.spawn(thread, connection.Callback, thread, ...)
-			else
-				local thread = threads[length]
-				threads[length] = nil -- Remove from free threads list.
-				task.spawn(thread, connection.Callback, thread, ...)
-			end
+			-- Resume the connection's callback thread.
+			task.spawn(connection.Thread, ...)
 			
 			-- Go to the next connection.
 			connection = connection.Next
@@ -221,13 +210,43 @@ local Signal = table.freeze({__index = table.freeze({
 	end,
 	
 	DisconnectAll = function(signal)
-		signal.Next = nil
+		local connection = signal.Next
+		if connection then
+			-- Close all callback threads.
+			while true do
+				-- Close callback thread.
+				coroutine.close(connection.Thread)
+				
+				-- Go to the next connection.
+				connection = connection.Next
+				-- Verify connection.
+				if not connection then break end
+			end
+			
+			-- Remove linked list reference, allowing for garbage collection.
+			signal.Next = nil
+		end
 	end,
 	Destroy = function(signal)
-		-- Disconnect all.
-		signal.Next = nil
+		-- Disconnect all connections.
+		local connection = signal.Next
+		if connection then
+			-- Close all callback threads.
+			while true do
+				-- Close callback thread.
+				coroutine.close(connection.Thread)
+				
+				-- Go to the next connection.
+				connection = connection.Next
+				-- Verify connection.
+				if not connection then break end
+			end
+			
+			-- Remove linked list reference, allowing for garbage collection.
+			signal.Next = nil
+		end
 		
-		-- Unlink metatable.
+		-- Unlink methods.
 		setmetatable(signal, nil)
 	end
 })})

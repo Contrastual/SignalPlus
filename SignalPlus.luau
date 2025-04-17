@@ -20,7 +20,7 @@
  +++++++++++++++++++++++++                                                                          
       +++++                                                                                         
 
-v3.0.0
+v3.1.0
 
 An insanely fast, memory efficient, fully typed, featureful,
 lightweight, open-source script signal module for Roblox.
@@ -109,70 +109,68 @@ local function callbackThread(connection, callback)
 end
 
 -- Connection functions.
-local function disconnect(connection)
+local Connection = {}
+Connection.__index = Connection
+
+Connection.Disconnect = function(connection)
 	-- Close callback thread.
 	local thread = connection.Thread
+	if not thread then return end -- Cancel if it's already disconnected.
 	if coroutine.status(thread) == "suspended" then
 		coroutine.close(thread)
-	else
-		connection.Thread = nil
 	end
+	connection.Thread = nil
 	-- Remove connection.
-	local connections = connection.Connections
-	local lastIndex = #connections
+	local signal = connection.Signal
+	local lastIndex = #signal
 	local index = connection.Index
-	if index < lastIndex then
-		local last = connections[lastIndex]
-		connections[index] = last
+	if index == lastIndex then
+		signal[lastIndex] = nil
+	else
+		local last = signal[lastIndex]
 		last.Index = index
+		signal[index] = last
+		signal[lastIndex] = nil
 	end
-	connections[lastIndex] = nil
 end
 
 -- Signal functions.
-local function connect(signal, callback)
+local Signal = {}
+Signal.__index = Signal
+
+Signal.Connect = function(signal, callback)
 	-- Create connection.
-	local connections = signal.Connections
-	
 	local connection = {
-		-- Data.
-		Connections = connections,
-		Index = #connections,
-		
-		-- Functions.
-		Disconnect = disconnect
+		Signal = signal,
+		Index = #signal + 1
 	}
 	connection.Thread = task.spawn(callbackThread, connection, callback)
 	
 	-- Add connection.
-	table.insert(connections, connection)
+	table.insert(signal, connection)
 	
 	-- Return connection.
-	return connection
+	return setmetatable(connection, Connection)
 end
-local function once(signal, callback)
+Signal.Once = function(signal, callback)
 	-- Create connection.
-	local connections = signal.Connections
-	
 	local connection = {
-		-- Data.
-		Connections = connections,
-		Index = #connections,
-		
-		-- Functions.
-		Disconnect = disconnect
+		Signal = signal,
+		Index = #signal + 1
 	}
 	connection.Thread = task.spawn(callbackThread, connection, function(...)
 		-- Remove callback thread.
 		connection.Thread = nil
 		-- Remove connection.
-		local connections = connection.Connections
-		local lastIndex = #connections
+		local lastIndex = #signal
 		local index = connection.Index
-		if index < lastIndex then
-			local last = connections[lastIndex]
-			connections[index] = last
+		if index == lastIndex then
+			signal[lastIndex] = nil
+		else
+			local last = signal[lastIndex]
 			last.Index = index
+			signal[index] = last
+			signal[lastIndex] = nil
 		end
 		
 		-- Fire callback.
@@ -180,37 +178,33 @@ local function once(signal, callback)
 	end)
 	
 	-- Add connection.
-	table.insert(connections, connection)
+	table.insert(signal, connection)
 	
 	-- Return connection.
-	return connection
+	return setmetatable(connection, Connection)
 end
-local function wait(signal)
+Signal.Wait = function(signal)
 	-- Save this thread to resume later.
 	local thread = coroutine.running()
 	
 	-- Create connection.
-	local connections = signal.Connections
-	
 	local connection = {
-		-- Data.
-		Connections = connections,
-		Index = #connections,
-		
-		-- Functions.
-		Disconnect = disconnect
+		Signal = signal,
+		Index = #signal + 1
 	}
 	connection.Thread = task.spawn(callbackThread, connection, function(...)
 		-- Remove callback thread.
 		connection.Thread = nil
 		-- Remove connection.
-		local connections = connection.Connections
-		local lastIndex = #connections
+		local lastIndex = #signal
 		local index = connection.Index
-		if index < lastIndex then
-			local last = connections[lastIndex]
-			connections[index] = last
+		if index == lastIndex then
+			signal[lastIndex] = nil
+		else
+			local last = signal[lastIndex]
 			last.Index = index
+			signal[index] = last
+			signal[lastIndex] = nil
 		end
 		
 		-- Resume the thread.
@@ -221,64 +215,51 @@ local function wait(signal)
 	end)
 	
 	-- Add connection.
-	table.insert(connections, connection)
+	table.insert(signal, connection)
 	
 	-- Yield until the next fire, and return the arguments on resume.
 	return coroutine.yield()
 end
 
-local function fire(signal, ...)
+Signal.Fire = function(signal, ...)
 	-- Resume all callback threads.
-	for _, connection in signal.Connections do
-		-- Resume the connection's callback thread.
-		local _, err = coroutine.resume(connection.Thread, ...)
+	for index = #signal, 1, -1 do
+		local thread = signal[index].Thread
+		if not thread then continue end
+		local _, err = coroutine.resume(thread, ...)
 		if err then error(err, 3) end
 	end
 end
 
-local function disconnectAll(signal)
+Signal.DisconnectAll = function(signal)
 	-- Disconnect all connections.
-	for _, connection in signal.Connections do
+	for _, connection in signal do
 		-- Close callback thread.
 		local thread = connection.Thread
 		if coroutine.status(thread) == "suspended" then
 			coroutine.close(thread)
-		else
-			connection.Thread = nil
 		end
+		connection.Thread = nil
 	end
-	table.clear(signal.Connections)
-end
-local function destroy(signal)
-	-- Disconnect all connections.
-	local connections = signal.Connections
-	for _, connection in connections do
-		-- Close callback thread.
-		local thread = connection.Thread
-		if coroutine.status(thread) == "suspended" then
-			coroutine.close(thread)
-		else
-			connection.Thread = nil
-		end
-	end
-	table.clear(signal.Connections)
 	table.clear(signal)
 end
+Signal.Destroy = function(signal)
+	-- Disconnect all connections.
+	for _, connection in signal do
+		-- Close callback thread.
+		local thread = connection.Thread
+		if coroutine.status(thread) == "suspended" then
+			coroutine.close(thread)
+		end
+		connection.Thread = nil
+	end
+	table.clear(signal)
+	
+	-- Unlink methods.
+	setmetatable(signal, nil)
+end
 
--- Signal creation.
+-- Create and return signal creation function.
 return function()
-	return {
-		-- Connections array.
-		Connections = {},
-		
-		-- Functions.
-		Connect = connect,
-		Once = once,
-		Wait = wait,
-		
-		Fire = fire,
-		
-		DisconnectAll = disconnectAll,
-		Destroy = destroy
-	}
+	return setmetatable({}, Signal)
 end :: CreateSignal

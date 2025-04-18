@@ -20,8 +20,7 @@ And it still has all the features you'll ever need!
 beating the top alternatives like<br>
 Good-, Lemon- and FastSignal.**
 
-*An unprecedented level of optimization for<br>
-script signals, available for completely free!*
+*The perfect replacement for BindableEvents.*
 <br>
 <br>
 

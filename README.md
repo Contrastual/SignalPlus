@@ -2,8 +2,8 @@
 
 <img src="https://raw.githubusercontent.com/AlexanderLindholt/SignalPlus/refs/heads/main/Logo.png"></img>
 
-An insanely fast, lightweight, robust, fully typed and<br>
-documented open-source signal module for Roblox.
+An insanely fast, lightweight, fully typed and documented<br>
+open-source signal module for Roblox, with dynamic types.
 
 [<img src="https://raw.githubusercontent.com/AlexanderLindholt/LinkButtons/refs/heads/main/Static/Module.png"></img>](https://create.roblox.com/store/asset/118793070598362) ​ [<img src="https://raw.githubusercontent.com/AlexanderLindholt/LinkButtons/refs/heads/main/Static/Devforum.png"></img>](https://devforum.roblox.com/t/3552231)
 </div>

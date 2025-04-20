@@ -20,7 +20,7 @@
  +++++++++++++++++++++++++                                                                          
       +++++                                                                                         
 
-v3.2.0
+v3.2.1
 
 An insanely fast, lightweight, fully typed and documented
 open-source signal module for Roblox, with dynamic types.
@@ -29,7 +29,7 @@ open-source signal module for Roblox, with dynamic types.
 GitHub:
 https://github.com/AlexanderLindholt/SignalPlus
 
-Devforum:
+DevForum:
 https://devforum.roblox.com/t/3552231
 
 
@@ -132,6 +132,8 @@ Connection.Disconnect = function(connection)
 		signal[index] = last
 		signal[lastIndex] = nil
 	end
+	-- Remove index.
+	connection.Index = nil
 end
 
 -- Signal functions.
@@ -159,8 +161,6 @@ Signal.Once = function(signal, callback)
 		Signal = signal,
 		Index = #signal + 1,
 		Callback = function(...)
-			-- Remove callback.
-			connection.Index = nil
 			-- Remove connection.
 			local lastIndex = #signal
 			local index = connection.Index
@@ -172,6 +172,8 @@ Signal.Once = function(signal, callback)
 				signal[index] = last
 				signal[lastIndex] = nil
 			end
+			-- Remove index.
+			connection.Index = nil
 			
 			-- Fire callback.
 			callback(...)
@@ -194,8 +196,6 @@ Signal.Wait = function(signal)
 		Signal = signal,
 		Index = #signal + 1,
 		Callback = function(...)
-			-- Remove callback.
-			connection.Index = nil
 			-- Remove connection.
 			local lastIndex = #signal
 			local index = connection.Index
@@ -207,6 +207,8 @@ Signal.Wait = function(signal)
 				signal[index] = last
 				signal[lastIndex] = nil
 			end
+			-- Remove index.
+			connection.Index = nil
 			
 			-- Resume the thread.
 			if coroutine.status(thread) == "suspended" then -- To avoid errors.

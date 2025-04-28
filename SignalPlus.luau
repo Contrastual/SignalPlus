@@ -100,40 +100,27 @@ type CreateSignal = typeof(
 	function(): Signal end
 )
 
--- Setup thread recycling.
-local threads = {}
-local function reusableThreadCall(callback, thread, ...)
-	callback(...)
-	table.insert(threads, thread)
-end
-local function reusableThread()
-	while true do
-		reusableThreadCall(coroutine.yield())
-	end
-end
-
 -- Connection functions.
 local Connection = {}
 Connection.__index = Connection
 
 Connection.Disconnect = function(connection)
+	local index = connection["\254"]
+
 	-- Verify connection.
-	if not connection.Index then return end
+	if not index then return end
 	
 	-- Remove connection.
-	local signal = connection.Signal
+	local signal = connection["\253"]
 	local lastIndex = #signal
-	local index = connection.Index
-	if index == lastIndex then
-		signal[lastIndex] = nil
-	else
+	if index ~= lastIndex then
 		local last = signal[lastIndex]
-		last.Index = index
+		last["\254"] = index
 		signal[index] = last
-		signal[lastIndex] = nil
 	end
+	signal[lastIndex] = nil
 	-- Remove index.
-	connection.Index = nil
+	connection["\254"] = nil
 end
 
 -- Signal functions.
@@ -142,14 +129,15 @@ Signal.__index = Signal
 
 Signal.Connect = function(signal, callback)
 	-- Create connection.
+	local count = #signal + 1
 	local connection = {
-		Signal = signal,
-		Index = #signal + 1,
-		Callback = callback
+		["\253"] = signal,
+		["\254"] = count,
+		["\255"] = callback
 	}
 	
 	-- Add connection.
-	table.insert(signal, connection)
+	signal[count] = connection
 	
 	-- Return connection.
 	return setmetatable(connection, Connection)
@@ -157,23 +145,23 @@ end
 Signal.Once = function(signal, callback)
 	-- Create connection.
 	local connection = nil
+	local count = #signal + 1
 	connection = {
-		Signal = signal,
-		Index = #signal + 1,
-		Callback = function(...)
+		["\253"] = signal,
+		["\254"] = count,
+		["\255"] = function(...)
 			-- Remove connection.
 			local lastIndex = #signal
-			local index = connection.Index
-			if index == lastIndex then
-				signal[lastIndex] = nil
-			else
+			local index = connection["\254"]
+			if index ~= lastIndex then
 				local last = signal[lastIndex]
-				last.Index = index
+				last["\254"] = index
 				signal[index] = last
-				signal[lastIndex] = nil
 			end
+			signal[lastIndex] = nil
+
 			-- Remove index.
-			connection.Index = nil
+			connection["\254"] = nil
 			
 			-- Fire callback.
 			callback(...)
@@ -181,7 +169,7 @@ Signal.Once = function(signal, callback)
 	}
 	
 	-- Add connection.
-	table.insert(signal, connection)
+	signal[count] = connection
 	
 	-- Return connection.
 	return setmetatable(connection, Connection)
@@ -192,23 +180,24 @@ Signal.Wait = function(signal)
 	
 	-- Create connection.
 	local connection = nil
+	local count = #signal + 1
 	connection = {
-		Signal = signal,
-		Index = #signal + 1,
-		Callback = function(...)
+		["\253"] = signal,
+		["\254"] = count,
+		["\255"] = function(...)
 			-- Remove connection.
 			local lastIndex = #signal
-			local index = connection.Index
+			local index = connection["\254"]
 			if index == lastIndex then
 				signal[lastIndex] = nil
 			else
 				local last = signal[lastIndex]
-				last.Index = index
+				last["\254"] = index
 				signal[index] = last
 				signal[lastIndex] = nil
 			end
 			-- Remove index.
-			connection.Index = nil
+			connection["\254"] = nil
 			
 			-- Resume the thread.
 			if coroutine.status(thread) == "suspended" then -- To avoid errors.
@@ -219,32 +208,44 @@ Signal.Wait = function(signal)
 	}
 	
 	-- Add connection.
-	table.insert(signal, connection)
+	signal[count] = connection
 	
 	-- Yield until the next fire, and return the arguments on resume.
 	return coroutine.yield()
+end
+
+-- Setup thread recycling.
+local threads = {}
+local threadCount = 0
+local function reusableThreadCall(callback, thread, ...)
+	callback(...)
+	threadCount += 1
+	threads[threadCount] = thread
+end
+local function reusableThread()
+	while true do
+		reusableThreadCall(coroutine.yield())
+	end
 end
 
 Signal.Fire = function(signal, ...)
 	-- Resume all callback threads.
 	for index = #signal, 1, -1 do
 		-- Find or create a thread, and run the callback in it.
-		local length = #threads
-		if length == 0 then
-			local thread = coroutine.create(reusableThread)
+		local thread
+		if threadCount == 0 then
+			thread = coroutine.create(reusableThread)
 			coroutine.resume(thread)
-			task.spawn(thread, signal[index].Callback, thread, ...)
 		else
-			local thread = threads[length]
-			threads[length] = nil -- Remove from free threads list.
-			task.spawn(thread, signal[index].Callback, thread, ...)
+			thread = threads[threadCount]
+			threads[threadCount] = nil -- Remove from free threads list.
+			threadCount -= 1
 		end
+		task.spawn(thread, signal[index]["\255"], thread, ...)
 	end
 end
 
-Signal.DisconnectAll = function(signal)
-	table.clear(signal)
-end
+Signal.DisconnectAll = table.clear
 Signal.Destroy = function(signal)
 	-- Disconnect all connections.
 	table.clear(signal)
